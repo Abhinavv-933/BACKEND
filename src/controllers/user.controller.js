@@ -18,7 +18,7 @@ const registerUser = asyncHandler( async (req, res) => {
   
 
    const {fullName, email, username, password } = req.body
-   console.log("email:" ,email);
+  // console.log("email:" ,email);
 
   //  if(fullName === ""){
   //      throw new ApiError(400,"fullName is required")
@@ -31,7 +31,7 @@ const registerUser = asyncHandler( async (req, res) => {
     throw new ApiError(400, "All fields are required")
   }
 
-  const existedUser = User.findOne({
+  const existedUser = await User.findOne({
       $or: [{username} , { email }]
   })
    console.log(existedUser);
@@ -40,16 +40,21 @@ const registerUser = asyncHandler( async (req, res) => {
   if(existedUser){
     throw new ApiError(409,"User with email or username already exist")
   }
+  // console.log(req.files);
    
   //multer gives access to req.files just req.body is given by express by default
  
   //first property k andr ek object milta h jisko agr optionally lenge to
   //  usse uka poora path mil skta h cuz of multer
-  const avatarLocalPath = req.files?.avatar[0]?.path ;
+  const avatarLocalPath = req.files?.avatar?.[0]?.path ;
    console.log(avatarLocalPath);
-  const coverImageLocalPath =  req.files?.coverImage[0].path;
-   console.log(coverImageLocalPath);
+  // const coverImageLocalPath =  req.files?.coverImage?.[0]?.path;
+  // console.log(coverImageLocalPath);
   
+  let coverImageLocalPath;
+  if(req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length >0){
+    coverImageLocalPath = req.files.coverImage[0].path
+  }
   
    if(!avatarLocalPath){
     throw new ApiError(400, "Avatar file is required")
