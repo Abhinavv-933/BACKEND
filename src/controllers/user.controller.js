@@ -5,6 +5,23 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
 
+const generateAccessAndRefreshTokens = async(userId) => {
+  try {
+    const user = await User.findById(userId)
+    const accessToken = user.generateAccessToken()
+    const refreshToken = user.generateRefreshToken()
+
+    user.refreshToken = refreshToken
+    await user.save({validateBeforeSave: false })
+
+    return {accessToken, refreshToken}
+
+  } catch (error) {
+    throw new ApiError(500, "Something went wrong while generating refresh and access token")
+  }
+}
+
+
 const registerUser = asyncHandler( async (req, res) => {
    //1.get user details from frontend
   // 2. validation - not empty
@@ -90,4 +107,91 @@ const registerUser = asyncHandler( async (req, res) => {
 
 })
 
-export {registerUser}
+const loginUser = asyncHandler(async(req,res) =>{
+    //req body -> data 
+    // valid email ya username-> user already exist or not if new then signup 
+    // email-pass authentication (find user)
+    //access and refresh token genrate krne pdenge
+    // send cookies 
+    // response bhej do end me 
+    
+    const {email, username, password} = req.body
+
+    if (!username || !email) {
+      throw new ApiError(400, "username or emaili is required");
+    }
+
+    const user = await User.findOne(
+      {
+        $or: [{username},{email}]
+      }
+    )
+
+    if(!user){
+      throw new ApiError(404, "User does not exist")
+    }
+     //for password check we use method isPasswordCorrect and bcrypt 
+     //User-> mongoose ka object h to isse access nhi krna h 
+    const isPasswordValid =  await user.isPasswordCorrect(password)
+   if(!isPasswordValid){
+      throw new ApiError(404, "Invlaid User Credentials")
+    }
+
+  const {accessToken, refreshToken} = await generateAccessAndRefreshTokens(user._id)
+   
+  const loggedInUser = await User.findById(user._id).select("-password, -refreshToken")
+
+  const options = {
+    httpOnly: true,  //now these cookies can only by be modified by server only not from frontend
+    secure: true 
+  }
+
+   return res
+   .status(200)
+   .cookie("accessToken",accessToken, options)
+   .cookie("refreshToken", refreshToken, options)
+   .json(
+    new ApiResponse(
+      200,
+      {
+        user: loggedInUser,accessToken, refreshToken
+      // here we dealing that case where user wants to save accessToken And RefreshToken by itself
+      },
+      "User Logged In Successfully"
+    )
+   )
+
+})
+
+const logoutUser = asyncHandler(async(req,res) => {
+  await User.findByIdAndUpdate(
+    req.user._id,
+    {
+       //mongodb operator--> set
+       $set:{
+        refreshToken: undefined
+       }
+    },
+    {
+      new: true
+    }
+  )
+
+  const options = {
+    httpOnly: true,  //now these cookies can only by be modified by server only not from frontend
+    secure: true 
+  } 
+
+  return res
+  .status(200)
+  .clearCookie("accessToken",options)
+  .clearCookie("refreshToken",options)
+  .json(new ApiResponse(200, {}, "User logged Out"))
+})
+
+
+
+export {registerUser,
+  loginUser,
+  logoutUser
+}
