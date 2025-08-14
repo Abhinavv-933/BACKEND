@@ -42,7 +42,7 @@ router.route("/current-user").get(verifyJWT, getCurrenUser)
 
 router.route("/update-account").patch(verifyJWT, updateAccountDetails)
 router.route("/avatar").patch(verifyJWT, upload.single("avatar"), updateUserAvatar)
-router.route("/cover-image").patch(verifyJWT, upload.single("/coverImage"), updateUserCoverImage)
+router.route("/cover-image").patch(verifyJWT, upload.single("coverImage"), updateUserCoverImage)
 
 // we use this in params while accessing it from url
 router.route("/c/:username").get(verifyJWT, getUserChannelProfile)
