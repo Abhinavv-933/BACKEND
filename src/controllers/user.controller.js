@@ -5,6 +5,7 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
 import { response } from "express";
+import { Mongoose } from "mongoose";
 
 const generateAccessAndRefreshTokens = async(userId) => {
   try {
@@ -261,7 +262,11 @@ const changeCurrentPassword = asyncHandler(async(req,res) => {
 const getCurrenUser = asyncHandler(async(req, res) => {
   return res
   .status(200)
-  .json(200, req.user,"Current User fetched Successfully")
+  .json( new ApiResponse(
+     200,
+     req.user,
+     "Current User fetched Successfully"
+    ))
 })
 
 // file-update krwa rhe ho to alag controller aur endpoints rkha jata h better approach  
@@ -272,7 +277,7 @@ const updateAccountDetails = asyncHandler(async(req,res) => {
       throw new ApiError(400, "All Fields are required")
     }
 
-    const user = User.findByIdAndUpdate(
+    const user = await User.findByIdAndUpdate(
       req.user?._id,
       {
          $set: {
@@ -296,6 +301,19 @@ const updateUserAvatar = asyncHandler(async(req, res) => {
    if(!avatarLocalPath){
     new ApiError(400,"Avatar file is missing")
    }
+      /* // todo: delete old image 
+      // Delete old avatar image from Cloudinary if exists
+      const oldAvatar = await User.findById(req.user?._id);
+      if (oldAvatar && oldAvatar.avatar) {
+        // Assuming avatar field stores the Cloudinary URL
+        // Extract public_id from the URL
+        const publicIdMatch = oldAvatar.avatar.match(/\/([^\/]+)\.[a-zA-Z]+$/);
+        if (publicIdMatch) {
+          const publicId = publicIdMatch[1];
+          // You need to implement deleteFromCloudinary util
+          // await deleteFromCloudinary(publicId);
+        }
+      } */
 
   const avatar = await uploadOnCloudinary(avatarLocalPath)
 
@@ -352,6 +370,137 @@ const updateUserCoverImage = asyncHandler(async(req, res) => {
             )
 })
 
+const getUserChannelProfile = asyncHandler(async(req,res) =>{
+    // we will first  get url of channel from its params
+    const {username} = req.params
+
+    if(!username?.trim()){
+      throw new ApiError(400,"username is missing")
+    }
+  
+    // Aggregation pipeline used to determine subscriberCount, subscribedTo
+    const channel = await User.aggregate([
+      {
+        $match: {
+          username: username?.toLowerCase()
+        }
+      },
+      {
+        $lookup: {
+          from: "subscriptions", //in model every thing becomes in lowercase and ends with 's
+          localField: "_id",
+          foreignField: "channel",
+          as: "subscribers"
+        }
+      },
+      {
+        $lookup: {
+          from: "subscriptions", 
+          localField: "_id",
+          foreignField: "subscriber",
+          as: "subscribedTo"
+        }
+      },
+      {
+        $addFields: {
+          subscribersCount: {
+            $size: "$subscribers"
+          },
+          channelSubscribedToCount: {
+            $size: "$subscribedTo"
+          },
+          isSubscribed: {
+            $cond :{
+              // $in - calculate krke de deta h array or obj dono k andar
+              if: {$in: [req.user?._id,"$subscribers.subscriber"]},
+              then: true,
+              else: false
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          fullName:1,
+          username:1,
+          subscribersCount:1,
+          channelSubscribedToCount: 1,
+          isSubscribed : 1,
+          avatar:1,
+          coverImage:1 ,
+          email:1,
+        }
+      }
+    ])
+    console.log(channel);
+
+    if (channel?.length) {
+       throw new ApiError(404, "Channel does not Exist")
+    }
+
+    return res
+           .status(200)
+           .json(
+              new ApiResponse(200, channel[0] , "User Channel fetched successfully")
+            )
+})
+
+const getWatchHistory = asyncHandler(async(req,res) => {
+    const user = await User.aggregate([
+      {
+        $match: {
+          // yahan pe mongoose kaam nhi krta h aggregation pipeline k code directly jata h 
+           _id: new Mongoose.Types.ObjectId(req.user._id)
+        }
+      },
+      {
+        $lookup: {
+           from: "videos",
+           localField: "watchHistory",
+           foreignField: "_id",
+           as: "watchHistory",
+           // using pipeline or populate we can use as many pipeline as we want 
+           pipeline:[
+            {
+               $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner",
+                pipeline: [
+                  {
+                    $project: {
+                       fullName: 1,
+                       username: 1,
+                       avatar: 1
+                    }
+                  }
+                ]
+               }
+            }, 
+            { // sara data owner field me h to jo array aaya h to ek aur piepline lga denge jisse array sudhar denge using data structure
+               $addFields: {
+                 owner: { 
+                  // using first means it will give me first value of array ya fir arrayelementAt
+                    $first: "$owner"  // field mese nikalne k liye $owner
+                 }
+               }
+            }
+           ]
+        }
+      }
+    ])
+
+    return res
+          .status(200)
+          .json(
+            new ApiResponse(
+              200,
+              user[0].watchHistory, 
+              "fetched user watch History Successfully")
+          )
+})
+
 export {
   registerUser,
   loginUser,
@@ -361,5 +510,7 @@ export {
   getCurrenUser,
   updateAccountDetails,
   updateUserAvatar,
-  updateUserCoverImage
+  updateUserCoverImage,
+  getUserChannelProfile,
+  getWatchHistory
 }
